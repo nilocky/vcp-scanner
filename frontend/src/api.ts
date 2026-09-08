@@ -1,5 +1,6 @@
 import type {
   HistoryResponse,
+  MarketRegime,
   VCPScanResponse,
   VCPResult,
   VCPAssessment,
@@ -57,4 +58,5 @@ export const api = {
   saveScan: (name: string, filters: Filters) =>
     post<SavedScan>('/scans', { name, filters }),
   deleteScan: (id: number) => del<{ ok: boolean }>(`/scans/${id}`),
+  regime: () => get<MarketRegime>('/market/regime'),
 }

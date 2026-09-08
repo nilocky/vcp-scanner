@@ -5,7 +5,7 @@ import { CandidateTable } from './components/CandidateTable'
 import { ChartViewer } from './components/ChartViewer'
 import { FilterBar } from './components/FilterBar'
 import { useScanner } from './hooks/useScanner'
-import type { Bar, VCPAssessment, VCPResult } from './types'
+import type { Bar, MarketRegime, VCPAssessment, VCPResult } from './types'
 
 export default function App() {
   const {
@@ -26,6 +26,11 @@ export default function App() {
   const [aiOpen, setAiOpen] = useState(false)
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
+  const [regime, setRegime] = useState<MarketRegime | null>(null)
+
+  useEffect(() => {
+    api.regime().then(setRegime).catch(() => setRegime(null))
+  }, [])
 
   const select = useCallback(async (symbol: string) => {
     setSelected(symbol)
@@ -60,11 +65,26 @@ export default function App() {
 
   return (
     <div className="flex h-screen flex-col bg-slate-950 text-slate-100">
-      <header className="border-b border-slate-800 p-4">
-        <h1 className="text-xl font-bold">VCP Scanner</h1>
-        <p className="text-xs text-slate-500">
-          Minervini Trend Template · Volatility Contraction Patterns
-        </p>
+      <header className="flex items-center justify-between border-b border-slate-800 p-4">
+        <div>
+          <h1 className="text-xl font-bold">VCP Scanner</h1>
+          <p className="text-xs text-slate-500">
+            Minervini Trend Template · Volatility Contraction Patterns
+          </p>
+        </div>
+        {regime && (
+          <span
+            className={`rounded-full px-3 py-1 text-xs font-medium ${
+              regime.above_sma200
+                ? 'bg-emerald-950 text-emerald-400'
+                : 'bg-red-950 text-red-400'
+            }`}
+          >
+            {regime.above_sma200
+              ? 'Market: Uptrend (SPY > SMA200)'
+              : 'Market: Downtrend (SPY < SMA200)'}
+          </span>
+        )}
       </header>
 
       <FilterBar

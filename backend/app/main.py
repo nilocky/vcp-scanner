@@ -12,7 +12,7 @@ from .config import get_settings
 from .scheduler import start_scheduler
 from .schemas import SavedScan, SavedScanCreate
 from .scanner.client import ScanResult, TradingViewScannerClient
-from .scanner.history import BackfillStats, backfill_candidates, get_cache
+from .scanner.history import BackfillStats, backfill_candidates, fetch_history_bars, get_cache
 from .screener import metrics
 from .vcp.engine import VCPResult, detect_vcp
 
@@ -103,6 +103,13 @@ class VCPScanResponse(BaseModel):
 class VLIAssessmentResponse(BaseModel):
     scanned: int
     results: list[VCPAssessment]
+
+
+class MarketRegime(BaseModel):
+    ticker: str
+    above_sma200: bool
+    spy_close: float
+    spy_sma200: float
 
 
 def _attach_metrics(results: list[VCPResult]) -> None:
@@ -306,6 +313,31 @@ async def vcp_ai_analysis(symbol: str) -> VCPAssessment:
             status_code=502,
             detail=f"LLM assessment failed for {symbol}: {exc}",
         ) from exc
+
+
+@app.get(
+    "/api/v1/market/regime",
+    response_model=MarketRegime,
+    tags=["Scanner"],
+    summary="Market regime: SPY vs SMA200 (M of CANSLIM)",
+)
+async def market_regime() -> MarketRegime:
+    bars = _cache.get_bars("SPY")
+    if not bars:
+        fetched = await fetch_history_bars("SPY", period=settings.history_period)
+        _cache.upsert_bars("SPY", [(b.ts, b.open, b.high, b.low, b.close, b.volume) for b in fetched])
+        bars = _cache.get_bars("SPY")
+    closes = [b[4] for b in bars]
+    spy_sma200 = metrics.sma(closes, 200)
+    if spy_sma200 is None:
+        raise HTTPException(status_code=422, detail="Not enough SPY bars for a 200-day SMA")
+    spy_close = closes[-1]
+    return MarketRegime(
+        ticker="SPY",
+        above_sma200=spy_close > spy_sma200,
+        spy_close=spy_close,
+        spy_sma200=round(spy_sma200, 2),
+    )
 
 
 @app.get("/api/v1/scans", response_model=list[SavedScan], tags=["Scanner"], summary="List saved scans")

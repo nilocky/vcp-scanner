@@ -4,6 +4,7 @@ import {
   ColorType,
   createChart,
   createSeriesMarkers,
+  LineSeries,
   type IChartApi,
   type UTCTimestamp,
 } from 'lightweight-charts'
@@ -12,6 +13,12 @@ import type { Bar, VCPResult } from '../types'
 interface Props {
   bars: Bar[]
   vcp: VCPResult | null
+}
+
+function sma(values: number[], n: number): (number | null)[] {
+  return values.map((_, i) =>
+    i < n - 1 ? null : values.slice(i - n + 1, i + 1).reduce((a, b) => a + b, 0) / n,
+  )
 }
 
 export function ChartViewer({ bars, vcp }: Props) {
@@ -50,6 +57,26 @@ export function ChartViewer({ bars, vcp }: Props) {
         close: b.close,
       })),
     )
+
+    const closes = bars.map((b) => b.close)
+    const maConfigs: [number, string][] = [
+      [20, '#64748b'],
+      [50, '#3b82f6'],
+      [200, '#f59e0b'],
+    ]
+    for (const [period, color] of maConfigs) {
+      const series = chart.addSeries(LineSeries, {
+        color,
+        lineWidth: 1,
+        lastValueVisible: false,
+        priceLineVisible: false,
+      })
+      series.setData(
+        sma(closes, period)
+          .map((value, i) => (value === null ? null : { time: bars[i].ts as UTCTimestamp, value }))
+          .filter((p): p is { time: UTCTimestamp; value: number } => p !== null),
+      )
+    }
 
     if (vcp && vcp.pivot_buy_price != null) {
       candle.createPriceLine({

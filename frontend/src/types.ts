@@ -61,3 +61,10 @@ export interface HistoryResponse {
   count: number
   bars: Bar[]
 }
+
+export interface MarketRegime {
+  ticker: string
+  above_sma200: boolean
+  spy_close: number
+  spy_sma200: number
+}
