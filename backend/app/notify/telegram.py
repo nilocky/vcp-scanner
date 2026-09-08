@@ -24,17 +24,17 @@ async def send_vcp_alert(
         print("[WARN] Telegram bot credentials missing. Skipping notification.")
         return False
 
-    waves = " ➔ ".join(f"{s.depth_pct}%" for s in assessment.contraction_stages)
+    waves = " ➔ ".join(f"{_escape_md2(f'{s.depth_pct}%')}" for s in assessment.contraction_stages)
     risk_pct = ((assessment.pivot_buy_price - assessment.suggested_stop_loss) / assessment.pivot_buy_price) * 100
     text = (
         "🚨 *VCP BREAKOUT ALERT* 🚨\n\n"
-        f"🎯 *Ticker*: `{assessment.ticker}`\n"
-        f"⭐ *AI Score*: `{assessment.vcp_confidence_score}/100`\n"
+        f"🎯 *Ticker*: `{_escape_md2(assessment.ticker)}`\n"
+        f"⭐ *AI Score*: `{_escape_md2(str(assessment.vcp_confidence_score))}/100`\n"
         f"🌊 *Contractions*: `{waves}`\n"
-        f"⚡ *Pivot Buy*: `${assessment.pivot_buy_price:.2f}`\n"
-        f"🛡️ *Stop Loss*: `${assessment.suggested_stop_loss:.2f}` \\(Risk: {risk_pct:.1f}%\\)\n"
-        f"⚖️ *R/R Ratio*: `{assessment.risk_reward_ratio:.1f}R`\n\n"
-        f"💡 *AI Thesis*:\n_{assessment.ai_commentary}_\n\n"
+        f"⚡ *Pivot Buy*: `${_escape_md2(f'{assessment.pivot_buy_price:.2f}')}`\n"
+        f"🛡️ *Stop Loss*: `${_escape_md2(f'{assessment.suggested_stop_loss:.2f}')}` \\(Risk: {_escape_md2(f'{risk_pct:.1f}')}%\\)\n"
+        f"⚖️ *R/R Ratio*: `{_escape_md2(f'{assessment.risk_reward_ratio:.1f}')}R`\n\n"
+        f"💡 *AI Thesis*:\n_{_escape_md2(assessment.ai_commentary)}_\n\n"
         f"📈 [View on TradingView](https://www.tradingview.com/chart/?symbol={assessment.ticker})"
     )
 

@@ -47,8 +47,8 @@ def test_send_alert_posts_markdownv2() -> None:
     assert b'"chat_id": "123"' in body or b'"chat_id":"123"' in body
     assert b"MarkdownV2" in body
     assert b"NYSE:GKOS" in body
-    assert b"3.5%" in body
-    assert b"142.50" in body
+    assert b"3\\\\.5%" in body
+    assert b"142\\\\.50" in body
 
 
 def test_send_alert_false_without_credentials() -> None:
