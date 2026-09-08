@@ -11,6 +11,7 @@ from .config import get_settings
 from .scheduler import start_scheduler
 from .scanner.client import ScanResult, TradingViewScannerClient
 from .scanner.history import BackfillStats, backfill_candidates, get_cache
+from .screener import metrics
 from .vcp.engine import VCPResult, detect_vcp
 
 logger = logging.getLogger("vcp-scanner")
@@ -102,6 +103,17 @@ class VLIAssessmentResponse(BaseModel):
     results: list[VCPAssessment]
 
 
+def _attach_metrics(results: list[VCPResult]) -> None:
+    """Fill relative_volume / pct_off_52w_high / rs from cached bars, in place."""
+    symbols_bars = {r.symbol: _cache.get_bars(r.symbol) for r in results}
+    ranks = metrics.rs_rank(symbols_bars)
+    for r in results:
+        bars = symbols_bars.get(r.symbol) or []
+        r.relative_volume = metrics.relative_volume(bars)
+        r.pct_off_52w_high = metrics.pct_off_52w_high(bars)
+        r.rs = ranks.get(r.symbol)
+
+
 @app.get("/health", response_model=HealthResponse, tags=["Health"], summary="Service liveness check")
 async def health() -> HealthResponse:
     return HealthResponse(status="ok", app=settings.app_name)
@@ -189,6 +201,7 @@ async def vcp_scan(include_premature: bool = False) -> VCPScanResponse:
         premature.sort(key=lambda r: r.contractions[-1].depth_pct)
         rows.extend(premature)
         _cache.upsert_watchlist([r.symbol for r in premature])
+    _attach_metrics(rows)
     return VCPScanResponse(scanned=len(results), qualified=len(qualified), results=rows)
 
 
@@ -206,6 +219,7 @@ async def watchlist() -> VCPScanResponse:
         if (r := detect_vcp(symbol, _cache.get_bars(symbol))).verdict != "FAILED_STRUCTURE"
     ]
     results.sort(key=lambda r: r.contractions[-1].depth_pct)
+    _attach_metrics(results)
     return VCPScanResponse(
         scanned=len(results),
         qualified=sum(1 for r in results if r.verdict == "STRONG_SETUP"),

@@ -89,6 +89,28 @@ def test_lifespan_does_not_start_scheduler_without_token() -> None:
     assert started == []
 
 
+def test_vcp_scan_enriches_metrics() -> None:
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    cache = BarCache(path)
+    symbol = "NYSE:GKOS"
+    bars = [(i, 100.0, 105.0, 95.0, 100.0, 1000.0) for i in range(252)]
+    bars.append((252, 100.0, 105.0, 95.0, 100.0, 2000.0))
+    cache.upsert_bars(symbol, bars)
+
+    def strong(sym, bars_):
+        return VCPResult(symbol=sym, contractions=[Contraction(peak_ts=1, trough_ts=2, depth_pct=3.0, days=4)],
+                         volume_dryup_ratio=0.3, pivot_buy_price=100.0, stop_loss=95.0, verdict="STRONG_SETUP")
+
+    with mock.patch.object(main, "detect_vcp", strong), mock.patch.object(main, "_cache", cache):
+        res = client.get("/api/v1/vcp/scan")
+    assert res.status_code == 200, res.text
+    row = res.json()["results"][0]
+    assert row["relative_volume"] == 2.0
+    assert row["pct_off_52w_high"] is not None
+    assert row["rs"] is not None
+
+
 if __name__ == "__main__":
     test_scan_routes_not_shadowed_by_symbol_param()
     print("route-order regression passed")
@@ -96,3 +118,5 @@ if __name__ == "__main__":
     print("single AI 502 regression passed")
     test_watchlist_roundtrip()
     print("watchlist round-trip passed")
+    test_vcp_scan_enriches_metrics()
+    print("vcp scan metrics enrichment passed")
