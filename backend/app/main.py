@@ -1,4 +1,5 @@
 import logging
+import time
 from contextlib import asynccontextmanager
 
 import httpx
@@ -9,6 +10,7 @@ from pydantic import BaseModel
 from .agent.client import VCPAssessment, assess_vcp_cached
 from .config import get_settings
 from .scheduler import start_scheduler
+from .schemas import SavedScan, SavedScanCreate
 from .scanner.client import ScanResult, TradingViewScannerClient
 from .scanner.history import BackfillStats, backfill_candidates, get_cache
 from .screener import metrics
@@ -304,3 +306,21 @@ async def vcp_ai_analysis(symbol: str) -> VCPAssessment:
             status_code=502,
             detail=f"LLM assessment failed for {symbol}: {exc}",
         ) from exc
+
+
+@app.get("/api/v1/scans", response_model=list[SavedScan], tags=["Scanner"], summary="List saved scans")
+async def list_scans() -> list[SavedScan]:
+    return [SavedScan(**s) for s in _cache.list_scans()]
+
+
+@app.post("/api/v1/scans", response_model=SavedScan, tags=["Scanner"], summary="Save a scan filter set")
+async def save_scan(payload: SavedScanCreate) -> SavedScan:
+    scan_id = _cache.save_scan(payload.name, payload.filters.model_dump_json())
+    return SavedScan(id=scan_id, name=payload.name, filters=payload.filters, created_at=int(time.time()))
+
+
+@app.delete("/api/v1/scans/{scan_id}", tags=["Scanner"], summary="Delete a saved scan")
+async def delete_scan(scan_id: int) -> dict:
+    if not _cache.delete_scan(scan_id):
+        raise HTTPException(status_code=404, detail=f"No saved scan with id {scan_id}")
+    return {"ok": True}
