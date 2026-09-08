@@ -13,6 +13,8 @@ export default function App() {
   const [bars, setBars] = useState<Bar[]>([])
   const [vcp, setVcp] = useState<VCPResult | null>(null)
   const [assessment, setAssessment] = useState<VCPAssessment | null>(null)
+  const [aiError, setAiError] = useState<string | null>(null)
+  const [aiOpen, setAiOpen] = useState(false)
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailError, setDetailError] = useState<string | null>(null)
 
@@ -21,13 +23,17 @@ export default function App() {
     setBars([])
     setVcp(null)
     setAssessment(null)
+    setAiError(null)
     setDetailLoading(true)
     setDetailError(null)
     try {
       const [h, v, a] = await Promise.all([
         api.history(symbol),
         api.vcp(symbol),
-        api.ai(symbol).catch(() => null),
+        api.ai(symbol).catch((e: unknown) => {
+          setAiError(e instanceof Error ? e.message : String(e))
+          return null
+        }),
       ])
       setBars(h.bars)
       setVcp(v)
@@ -62,6 +68,9 @@ export default function App() {
 
       <div className="flex flex-1 overflow-hidden">
         <div className="flex w-1/2 min-w-0 flex-col border-r border-slate-800">
+          <div className="border-b border-slate-800 px-4 py-2 text-xs text-slate-500">
+            {rows.length} candidate{rows.length === 1 ? '' : 's'}
+          </div>
           <CandidateTable
             rows={rows}
             selected={selected}
@@ -74,7 +83,17 @@ export default function App() {
             <h2 className="text-sm font-semibold text-slate-300">
               {selected ?? 'Select a symbol'}
             </h2>
-            {detailLoading && <span className="text-xs text-slate-500">Loading…</span>}
+            <div className="flex items-center gap-2">
+              {detailLoading && <span className="text-xs text-slate-500">Loading…</span>}
+              {selected && (
+                <button
+                  onClick={() => setAiOpen(true)}
+                  className="rounded bg-slate-800 px-2 py-1 text-xs text-slate-300 hover:bg-slate-700"
+                >
+                  AI Thesis
+                </button>
+              )}
+            </div>
           </div>
           <div className="flex-1 overflow-auto p-3">
             {detailError && <p className="text-red-400">{detailError}</p>}
@@ -87,8 +106,9 @@ export default function App() {
         symbol={selected}
         assessment={assessment}
         loading={detailLoading && !assessment}
-        error={detailError}
-        onClose={() => setSelected(null)}
+        error={aiError}
+        open={aiOpen}
+        onClose={() => setAiOpen(false)}
       />
     </div>
   )

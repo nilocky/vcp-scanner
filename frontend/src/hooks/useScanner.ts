@@ -26,6 +26,41 @@ export interface Row {
   stop: number | null
   aiScore: number | null
   riskReward: number | null
+  rs: number | null
+  relativeVolume: number | null
+  pctOffHigh: number | null
+}
+
+function toRow(r: VCPResult, a?: VCPAssessment): Row {
+  const last = r.contractions[r.contractions.length - 1]
+  return {
+    symbol: r.symbol,
+    verdict: r.verdict,
+    contractions: r.contractions.length,
+    finalDepthPct: last?.depth_pct ?? NaN,
+    volumeDryup: r.volume_dryup_ratio,
+    pivot: r.pivot_buy_price,
+    stop: r.stop_loss,
+    aiScore: a?.vcp_confidence_score ?? null,
+    riskReward: a?.risk_reward_ratio ?? null,
+    rs: r.rs ?? null,
+    relativeVolume: r.relative_volume ?? null,
+    pctOffHigh: r.pct_off_52w_high ?? null,
+  }
+}
+
+async function fetchAi(symbols: string[]): Promise<Map<string, VCPAssessment>> {
+  const map = new Map<string, VCPAssessment>()
+  await Promise.allSettled(
+    symbols.map(async (s) => {
+      try {
+        map.set(s, await api.ai(s))
+      } catch {
+        // no assessment available for this symbol
+      }
+    }),
+  )
+  return map
 }
 
 export function useScanner() {
@@ -59,29 +94,40 @@ export function useScanner() {
                 filters.minAiScore)
           )
         })
-        .map((r: VCPResult): Row => {
-          const a = bySymbol.get(r.symbol)
-          const last = r.contractions[r.contractions.length - 1]
-          return {
-            symbol: r.symbol,
-            verdict: r.verdict,
-            contractions: r.contractions.length,
-            finalDepthPct: last?.depth_pct ?? NaN,
-            volumeDryup: r.volume_dryup_ratio,
-            pivot: r.pivot_buy_price,
-            stop: r.stop_loss,
-            aiScore: a?.vcp_confidence_score ?? null,
-            riskReward: a?.risk_reward_ratio ?? null,
-          }
-        })
 
-      filtered.sort((x, y) => {
+      const missing = filtered.filter((r) => !bySymbol.has(r.symbol)).map((r) => r.symbol)
+      if (missing.length) {
+        for (const [s, a] of await fetchAi(missing)) bySymbol.set(s, a)
+        setAiEnabled(true)
+      }
+
+      const mapped = filtered.map((r: VCPResult): Row => toRow(r, bySymbol.get(r.symbol)))
+      mapped.sort((x, y) => {
         const xs = x.aiScore ?? -1
         const ys = y.aiScore ?? -1
         return xs !== ys ? ys - xs : x.finalDepthPct - y.finalDepthPct
       })
 
-      setRows(filtered)
+      setRows(mapped)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+      setRows([])
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  const loadWatchlist = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const watch = await api.watchlist()
+      const bySymbol = await fetchAi(watch.results.map((r) => r.symbol))
+      if (bySymbol.size > 0) setAiEnabled(true)
+      const rows = watch.results
+        .map((r) => toRow(r, bySymbol.get(r.symbol)))
+        .sort((a, b) => a.finalDepthPct - b.finalDepthPct)
+      setRows(rows)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
       setRows([])
@@ -91,8 +137,8 @@ export function useScanner() {
   }, [])
 
   useEffect(() => {
-    run(defaultFilters)
-  }, [run])
+    loadWatchlist()
+  }, [loadWatchlist])
 
-  return { rows, loading, error, aiEnabled, run }
+  return { rows, loading, error, aiEnabled, run, loadWatchlist }
 }

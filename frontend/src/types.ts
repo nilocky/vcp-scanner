@@ -12,6 +12,9 @@ export interface VCPResult {
   pivot_buy_price: number | null
   stop_loss: number | null
   verdict: string
+  relative_volume?: number | null
+  pct_off_52w_high?: number | null
+  rs?: number | null
 }
 
 export interface VCPScanResponse {
