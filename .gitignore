@@ -1,0 +1,13 @@
+# Secrets & local env
+.env
+.env.local
+.env.*.local
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Cached market data (regenerable via /api/v1/history/backfill)
+backend/data/

@@ -1,0 +1,25 @@
+[project]
+name = "vcp-scanner-backend"
+version = "0.1.0"
+description = "VCP Scanner FastAPI backend - TradingView Trend Template ingestion"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+    "httpx",
+    "pandas",
+    "scipy",
+    "apscheduler",
+    "python-dotenv",
+    "yfinance>=1.7.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+]
+
+[tool.uv]
+package = false
