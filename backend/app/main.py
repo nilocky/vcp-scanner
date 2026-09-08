@@ -1,16 +1,27 @@
+import logging
+from contextlib import asynccontextmanager
+
 import httpx
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from .agent.client import VCPAssessment, assess_batch, assess_vcp
+from .agent.client import VCPAssessment, assess_vcp_cached
 from .config import get_settings
+from .scheduler import start_scheduler
 from .scanner.client import ScanResult, TradingViewScannerClient
 from .scanner.history import BackfillStats, backfill_candidates, get_cache
 from .vcp.engine import VCPResult, detect_vcp
 
+logger = logging.getLogger("vcp-scanner")
 settings = get_settings()
 _cache = get_cache(settings)
+
+if not settings.llm_api_key:
+    logger.warning(
+        "LLM_API_KEY is empty: AI assessment endpoints will return 502. "
+        "Set it in .env.local and restart the backend. Rule-based VCP scan still works."
+    )
 
 TAGS_METADATA = [
     {"name": "Health", "description": "Service liveness and metadata."},
@@ -18,6 +29,19 @@ TAGS_METADATA = [
     {"name": "History", "description": "Daily OHLCV backfill and cached bars."},
     {"name": "VCP Analysis", "description": "Volatility Contraction Pattern detection."},
 ]
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if settings.telegram_bot_token and settings.telegram_chat_id:
+        scheduler = start_scheduler(settings, _cache)
+        print("[INFO] Scheduled daily VCP alert job started.")
+        try:
+            yield
+        finally:
+            scheduler.shutdown(wait=False)
+    else:
+        yield
+
 
 app = FastAPI(
     title=settings.app_name,
@@ -30,6 +54,7 @@ app = FastAPI(
     redoc_url="/redoc",
     openapi_url="/openapi.json",
     openapi_tags=TAGS_METADATA,
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -163,7 +188,29 @@ async def vcp_scan(include_premature: bool = False) -> VCPScanResponse:
         premature = [r for r in results if r.verdict == "PREMATURE"]
         premature.sort(key=lambda r: r.contractions[-1].depth_pct)
         rows.extend(premature)
+        _cache.upsert_watchlist([r.symbol for r in premature])
     return VCPScanResponse(scanned=len(results), qualified=len(qualified), results=rows)
+
+
+@app.get(
+    "/api/v1/watchlist",
+    response_model=VCPScanResponse,
+    tags=["VCP Analysis"],
+    summary="Get persisted watchlist candidates",
+    description="Recompute VCP metrics from cached bars for every symbol on the persisted watchlist.",
+)
+async def watchlist() -> VCPScanResponse:
+    results = [
+        r
+        for symbol in _cache.watchlist_symbols()
+        if (r := detect_vcp(symbol, _cache.get_bars(symbol))).verdict != "FAILED_STRUCTURE"
+    ]
+    results.sort(key=lambda r: r.contractions[-1].depth_pct)
+    return VCPScanResponse(
+        scanned=len(results),
+        qualified=sum(1 for r in results if r.verdict == "STRONG_SETUP"),
+        results=results,
+    )
 
 
 @app.get(
@@ -191,17 +238,26 @@ async def vcp_analysis(symbol: str) -> VCPResult:
     "OpenAI-compatible LLM, and rank by vcp_confidence_score.",
 )
 async def vcp_ai_scan() -> VLIAssessmentResponse:
-    results = [detect_vcp(symbol, _cache.get_bars(symbol)) for symbol in _cache.symbols()]
-    candidates = [(r.symbol, r) for r in results if r.verdict == "STRONG_SETUP"]
-    assessments = await assess_batch(
-        candidates,
-        base_url=settings.llm_base_url,
-        api_key=settings.llm_api_key,
-        model=settings.llm_model,
-        timeout=settings.llm_timeout_seconds,
-    )
+    assessments: list[VCPAssessment] = []
+    candidates = 0
+    for symbol in _cache.symbols():
+        bars = _cache.get_bars(symbol)
+        result = detect_vcp(symbol, bars)
+        if result.verdict != "STRONG_SETUP":
+            continue
+        candidates += 1
+        try:
+            assessments.append(await assess_vcp_cached(
+                symbol, result, bars, _cache,
+                base_url=settings.llm_base_url,
+                api_key=settings.llm_api_key,
+                model=settings.llm_model,
+                timeout=settings.llm_timeout_seconds,
+            ))
+        except RuntimeError:
+            continue
     assessments.sort(key=lambda a: a.vcp_confidence_score, reverse=True)
-    return VLIAssessmentResponse(scanned=len(candidates), results=assessments)
+    return VLIAssessmentResponse(scanned=candidates, results=assessments)
 
 
 @app.get(
@@ -218,11 +274,19 @@ async def vcp_ai_analysis(symbol: str) -> VCPAssessment:
             detail=f"No cached bars for {symbol}. Run /api/v1/history/backfill first.",
         )
     result = detect_vcp(symbol, bars)
-    return await assess_vcp(
-        symbol,
-        result,
-        base_url=settings.llm_base_url,
-        api_key=settings.llm_api_key,
-        model=settings.llm_model,
-        timeout=settings.llm_timeout_seconds,
-    )
+    try:
+        return await assess_vcp_cached(
+            symbol,
+            result,
+            bars,
+            _cache,
+            base_url=settings.llm_base_url,
+            api_key=settings.llm_api_key,
+            model=settings.llm_model,
+            timeout=settings.llm_timeout_seconds,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"LLM assessment failed for {symbol}: {exc}",
+        ) from exc
