@@ -12,7 +12,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.vcp.engine import detect_vcp  # noqa: E402
+from app.vcp.engine import VCPResult, detect_vcp  # noqa: E402
 
 START_TS = 1_700_000_000
 
@@ -64,6 +64,15 @@ def test_random_walk_fails() -> None:
     vols = [1_000_000.0] * 300
     result = detect_vcp("RAND", _series(closes, vols))
     assert result.verdict != "STRONG_SETUP"
+
+
+def test_vcp_result_optional_metrics_default_none() -> None:
+    r = VCPResult(symbol="X", contractions=[], volume_dryup_ratio=None,
+                  pivot_buy_price=None, stop_loss=None, verdict="FAILED_STRUCTURE")
+    assert r.relative_volume is None
+    assert r.pct_off_52w_high is None
+    assert r.rs is None
+    assert "relative_volume" in r.model_dump()
 
 
 if __name__ == "__main__":

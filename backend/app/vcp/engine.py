@@ -25,6 +25,9 @@ class VCPResult(BaseModel):
     pivot_buy_price: float | None
     stop_loss: float | None
     verdict: str
+    relative_volume: float | None = None
+    pct_off_52w_high: float | None = None
+    rs: float | None = None
 
 
 def detect_vcp(
