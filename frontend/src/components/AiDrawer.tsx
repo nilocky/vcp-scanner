@@ -5,14 +5,15 @@ interface Props {
   assessment: VCPAssessment | null
   loading: boolean
   error: string | null
+  open: boolean
   onClose: () => void
 }
 
-export function AiDrawer({ symbol, assessment, loading, error, onClose }: Props) {
+export function AiDrawer({ symbol, assessment, loading, error, open, onClose }: Props) {
   return (
     <div
       className={`fixed inset-y-0 right-0 z-20 w-full max-w-md transform border-l border-slate-800 bg-slate-900 transition-transform ${
-        symbol ? 'translate-x-0' : 'translate-x-full'
+        open ? 'translate-x-0' : 'translate-x-full'
       }`}
     >
       <div className="flex items-center justify-between border-b border-slate-800 p-4">

@@ -15,6 +15,7 @@ import httpx
 from pydantic import BaseModel, Field
 
 from ..vcp.engine import VCPResult
+from ..db.cache import BarCache, _bar_hash
 
 
 class ContractionStage(BaseModel):
@@ -128,7 +129,14 @@ async def assess_vcp(
         try:
             raw = await _chat_completion(base_url, api_key, model, prompt, timeout, transport)
             return _parse(raw, symbol, result)
-        except (httpx.HTTPStatusError, httpx.RequestError, json.JSONDecodeError) as exc:
+        except (
+            httpx.HTTPStatusError,
+            httpx.RequestError,
+            json.JSONDecodeError,
+            KeyError,
+            ValueError,
+            TypeError,
+        ) as exc:
             last = exc
             if attempt < retries:
                 await asyncio.sleep(2 ** attempt)
@@ -160,3 +168,28 @@ async def assess_batch(
 
     out = await asyncio.gather(*(_one(s, r) for s, r in results))
     return [a for a in out if a is not None]
+
+
+async def assess_vcp_cached(
+    symbol: str,
+    result: VCPResult,
+    bars: list[tuple],
+    cache: BarCache,
+    *,
+    base_url: str,
+    api_key: str,
+    model: str,
+    timeout: float = 60.0,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> VCPAssessment:
+    """Assess a VCP result, reusing the cached AI thesis when the bars are unchanged."""
+    bar_hash = _bar_hash(bars)
+    cached = cache.get_assessment(symbol, bar_hash)
+    if cached is not None:
+        return VCPAssessment.model_validate_json(cached)
+    assessment = await assess_vcp(
+        symbol, result, base_url=base_url, api_key=api_key, model=model,
+        timeout=timeout, transport=transport,
+    )
+    cache.put_assessment(symbol, bar_hash, assessment.model_dump_json())
+    return assessment
