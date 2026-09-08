@@ -8,7 +8,16 @@ import { useScanner } from './hooks/useScanner'
 import type { Bar, VCPAssessment, VCPResult } from './types'
 
 export default function App() {
-  const { rows, loading, error, aiEnabled, run } = useScanner()
+  const {
+    rows,
+    loading,
+    error,
+    aiEnabled,
+    run,
+    savedScans,
+    applySaved,
+    loadSavedScans,
+  } = useScanner()
   const [selected, setSelected] = useState<string | null>(null)
   const [bars, setBars] = useState<Bar[]>([])
   const [vcp, setVcp] = useState<VCPResult | null>(null)
@@ -58,7 +67,17 @@ export default function App() {
         </p>
       </header>
 
-      <FilterBar aiEnabled={aiEnabled} loading={loading} onScan={run} />
+      <FilterBar
+        aiEnabled={aiEnabled}
+        loading={loading}
+        savedScans={savedScans}
+        onScan={run}
+        onSave={async (name, f) => {
+          await api.saveScan(name, f)
+          loadSavedScans()
+        }}
+        onLoad={applySaved}
+      />
 
       {error && (
         <div className="border-b border-red-900 bg-red-950/50 p-3 text-sm text-red-300">

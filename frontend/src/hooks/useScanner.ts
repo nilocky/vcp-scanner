@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api } from '../api'
+import { api, type SavedScan } from '../api'
 import type { VCPAssessment, VCPResult } from '../types'
 
 export interface Filters {
@@ -68,6 +68,7 @@ export function useScanner() {
   const [aiEnabled, setAiEnabled] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [savedScans, setSavedScans] = useState<SavedScan[]>([])
 
   const run = useCallback(async (filters: Filters) => {
     setLoading(true)
@@ -140,5 +141,44 @@ export function useScanner() {
     loadWatchlist()
   }, [loadWatchlist])
 
-  return { rows, loading, error, aiEnabled, run, loadWatchlist }
+  const loadSavedScans = useCallback(async () => {
+    try {
+      setSavedScans(await api.listScans())
+    } catch {
+      // saved scans unavailable; leave the list empty
+    }
+  }, [])
+
+  useEffect(() => {
+    loadSavedScans()
+  }, [loadSavedScans])
+
+  const applySaved = useCallback(
+    (filters: Filters) => {
+      run(filters)
+    },
+    [run],
+  )
+
+  const removeScan = useCallback(async (id: number) => {
+    try {
+      await api.deleteScan(id)
+      setSavedScans((prev) => prev.filter((s) => s.id !== id))
+    } catch {
+      // ignore delete failures
+    }
+  }, [])
+
+  return {
+    rows,
+    loading,
+    error,
+    aiEnabled,
+    run,
+    loadWatchlist,
+    savedScans,
+    applySaved,
+    loadSavedScans,
+    removeScan,
+  }
 }
