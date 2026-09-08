@@ -21,6 +21,7 @@ class Settings(BaseSettings):
 
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
+    min_telegram_alert_score: int = 85
 
     tv_scan_timeout_seconds: float = 30.0
 
